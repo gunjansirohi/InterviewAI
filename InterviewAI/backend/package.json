@@ -1,0 +1,26 @@
+{
+  "name": "interviewai-backend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "test": "node --test src/**/*.test.js"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "bcrypt": "latest",
+    "cors": "latest",
+    "dotenv": "latest",
+    "express": "latest",
+    "jsonwebtoken": "latest",
+    "mammoth": "latest",
+    "mongoose": "latest",
+    "multer": "latest",
+    "pdf-parse": "1.1.1",
+    "pdfkit": "^0.19.1",
+    "zod": "latest"
+  }
+}

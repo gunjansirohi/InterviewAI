@@ -1,0 +1,6 @@
+import { Link } from 'react-router-dom';
+import AIReviewPanel from './AIReviewPanel';
+
+export default function CodingResult({ interview, evaluation, nextInterview }) {
+  return <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-12"><section className="rounded-2xl bg-slate-900 p-8 text-white"><p className="text-sm font-semibold uppercase tracking-wide text-indigo-300">Coding result</p><div className="mt-3 flex flex-wrap items-end justify-between gap-4"><div><h1 className="text-3xl font-bold">{interview.problem.title}</h1><p className="mt-2 text-slate-300">{evaluation.correctness}% hidden tests passed</p></div><div className="text-5xl font-bold">{evaluation.finalScore}<span className="text-xl text-slate-400">/100</span></div></div><div className="mt-5 flex gap-5 text-sm text-slate-300"><span>Time: {evaluation.executionTime ?? '—'}s</span><span>Memory: {evaluation.memoryUsage ?? '—'} KB</span></div></section><div className="mt-6"><AIReviewPanel evaluation={evaluation} /></div><div className="mt-6 flex flex-wrap gap-3">{nextInterview && <Link to={`/coding/interview/${nextInterview._id}`} className="rounded-lg bg-brand-600 px-5 py-3 font-semibold text-white">Next question</Link>}<Link to="/coding" className="rounded-lg border border-slate-300 px-5 py-3 font-semibold text-slate-700">Coding dashboard</Link></div></main>;
+}

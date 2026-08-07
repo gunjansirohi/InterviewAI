@@ -1,0 +1,10 @@
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { getCodingHistory } from './codingService';
+
+export default function CodingDashboard() {
+  const [interviews, setInterviews] = useState(null);
+  const [error, setError] = useState('');
+  useEffect(() => { let active = true; getCodingHistory().then((items) => { if (active) setInterviews(items); }).catch((requestError) => { if (active) setError(requestError.response?.data?.message || 'Unable to load coding history.'); }); return () => { active = false; }; }, []);
+  return <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-12"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="font-semibold text-brand-600">Live coding</p><h1 className="mt-1 text-4xl font-bold text-slate-900">Coding interview dashboard</h1></div><Link to="/coding/setup" className="rounded-lg bg-brand-600 px-5 py-3 font-semibold text-white">New challenge</Link></div>{error && <div role="alert" className="mt-6 rounded-lg bg-red-50 p-3 text-red-700">{error}</div>}{!interviews ? <p className="mt-8 text-slate-500">Loading coding interviews...</p> : interviews.length ? <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{interviews.map((item) => <Link key={item._id} to={`/coding/interview/${item._id}`} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:border-brand-600"><div className="flex items-start justify-between gap-3"><h2 className="font-bold text-slate-900">{item.problem.title}</h2><span className="text-xl font-bold text-brand-600">{item.score ?? '—'}</span></div><p className="mt-2 text-sm capitalize text-slate-500">{item.language} · {item.difficulty} · {item.topic}</p><time className="mt-4 block text-xs text-slate-400">{new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(item.createdAt))}</time></Link>)}</div> : <div className="mt-8 rounded-xl border border-dashed border-slate-300 p-10 text-center text-slate-500">No coding interviews yet.</div>}</main>;
+}

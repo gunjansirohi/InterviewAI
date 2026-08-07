@@ -1,0 +1,7 @@
+export default function AIReviewPanel({ evaluation }) {
+  if (!evaluation) return null;
+  const scores = [['Logic', evaluation.logicScore], ['Readability', evaluation.readabilityScore], ['Naming', evaluation.namingScore], ['Optimization', evaluation.optimizationScore]];
+  return <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"><h2 className="text-xl font-bold text-slate-900">AI code review</h2><div className="mt-5 grid gap-3 sm:grid-cols-4">{scores.map(([label, score]) => <div key={label} className="rounded-xl bg-slate-50 p-3 text-center"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 text-xl font-bold text-slate-900">{score}</p></div>)}</div><div className="mt-5 grid gap-4 sm:grid-cols-2"><p className="text-sm"><span className="font-semibold">Time complexity:</span> {evaluation.timeComplexity}</p><p className="text-sm"><span className="font-semibold">Space complexity:</span> {evaluation.spaceComplexity}</p></div><ReviewList title="Strengths" items={evaluation.strengths} color="text-emerald-700" /><ReviewList title="Improvements" items={evaluation.improvements} color="text-amber-700" /></section>;
+}
+
+function ReviewList({ title, items, color }) { return <div className="mt-5"><h3 className={`font-semibold ${color}`}>{title}</h3><ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-600">{items.map((item) => <li key={item}>{item}</li>)}</ul></div>; }
