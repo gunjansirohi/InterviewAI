@@ -53,3 +53,17 @@ skills.
 ---
 
 ## 📂 Project Structure
+InterviewIQ/
+│
+├── frontend/
+│ ├── src/
+│ ├── components/
+│ └── package.json
+│
+├── backend/
+│ ├── src/
+│ ├── modules/
+│ ├── routes/
+│ └── package.json
+│
+└── README.md
