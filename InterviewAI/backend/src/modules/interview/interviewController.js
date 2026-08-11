@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import Resume from '../resume/Resume.js';
-import { createInterview, endInterviewSession, getInterviewById, getInterviewHistory, insertFollowUpQuestion, saveAnswer, skipQuestion } from './interviewService.js';
+import { createInterview, endInterviewSession, getCurrentQuestionIndex, getInterviewById, getInterviewHistory, insertFollowUpQuestion, saveAnswer, skipQuestion } from './interviewService.js';
 import { generateQuestions } from './questionGenerator.js';
 import { generateFollowUpQuestion } from './followUpGenerator.js';
 
@@ -85,19 +85,27 @@ export async function submitAnswer(req, res, next) {
 export async function skipCurrentQuestion(req, res, next) {
   try {
     const { interviewId, questionId, reason = 'candidate_skipped' } = req.body || {};
+    const requestedQuestionIndex = Number(req.body?.questionIndex);
     if (!mongoose.isValidObjectId(interviewId)) return res.status(400).json({ success: false, message: 'A valid interview ID is required' });
     const interview = await getInterviewById(req.user._id, interviewId);
     if (!interview) return res.status(404).json({ success: false, message: 'Interview not found' });
 
-    const questionIndex = interview.questions.findIndex((item) => String(item._id || item.question) === String(questionId));
+    // The question subdocuments intentionally do not have Mongo _id values.
+    // Use the displayed index when supplied, rather than matching question text
+    // (which can be duplicated or modified by a follow-up question).
+    const questionIndex = Number.isInteger(requestedQuestionIndex)
+      ? requestedQuestionIndex
+      : interview.questions.findIndex((item) => String(item._id || item.question) === String(questionId));
     if (questionIndex < 0) return res.status(400).json({ success: false, message: 'Invalid question reference' });
 
     const result = await skipQuestion({ userId: req.user._id, interviewId, questionIndex, reason });
     if (!result || !result.interview) return res.status(404).json({ success: false, message: 'Interview not found' });
+    const nextQuestionIndex = getCurrentQuestionIndex(result.interview);
+    console.info('[interview-question-skipped]', { requestId: req.id, userId: String(req.user._id), interviewId, questionIndex, nextQuestionIndex, skipped: result.skipped });
     if (result.skipped === false) {
-      return res.status(200).json({ success: true, message: 'Question already skipped', nextQuestion: true, interview: result.interview });
+      return res.status(200).json({ success: true, message: 'Question already skipped', nextQuestion: true, nextQuestionIndex, interview: result.interview });
     }
-    return res.status(200).json({ success: true, message: 'Question skipped successfully', nextQuestion: true, interview: result.interview });
+    return res.status(200).json({ success: true, message: 'Question skipped successfully', nextQuestion: true, nextQuestionIndex, interview: result.interview });
   } catch (error) {
     return next(error);
   }

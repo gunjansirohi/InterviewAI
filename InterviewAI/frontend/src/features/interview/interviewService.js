@@ -24,3 +24,9 @@ export async function requestInterviewFollowUp(payload) {
   const { data } = await api.post('/interview/follow-up', payload);
   return data.interview;
 }
+
+export async function skipInterviewQuestion(payload) {
+  const { data } = await api.post('/interview/skip-question', payload);
+  if (!data?.success) throw new Error(data?.message || 'Unable to skip the question.');
+  return data;
+}

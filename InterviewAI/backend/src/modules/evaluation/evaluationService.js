@@ -44,26 +44,59 @@ export async function evaluateTranscript(context) {
 }
 
 export function createLocalEvaluation({ interviewType, transcript }) {
-  const answers = transcript.map((item) => item.answer.trim());
-  const words = answers.map((answer) => answer.split(/\s+/).filter(Boolean));
-  const averageWords = words.reduce((total, answerWords) => total + answerWords.length, 0) / Math.max(words.length, 1);
-  const combined = answers.join(' ').toLowerCase();
-  const reasoningSignals = (combined.match(/\b(because|therefore|trade-?off|first|then|result|approach|consider)\b/g) || []).length;
-  const technicalSignals = (combined.match(/\b(api|database|algorithm|system|test|performance|security|architecture|code|data)\b/g) || []).length;
-  const communicationScore = clamp(Math.round(45 + Math.min(averageWords, 35) * 1.2));
-  const problemSolvingScore = clamp(Math.round(45 + Math.min(reasoningSignals, 12) * 4));
-  const technicalBase = interviewType === 'behavioral' ? 60 : 45;
-  const technicalScore = clamp(Math.round(technicalBase + Math.min(technicalSignals, 12) * 4));
-  const overallScore = Math.round((technicalScore + communicationScore + problemSolvingScore) / 3);
-  const confidenceScore = clamp(Math.round(40 + Math.min(averageWords, 30) * 1.5 + Math.min(reasoningSignals, 5) * 3));
-  const answerQualityScore = clamp(Math.round((technicalScore + communicationScore + problemSolvingScore) / 3));
+  const responses = Array.isArray(transcript) ? transcript.filter((item) => typeof item?.answer === 'string' && item.answer.trim()) : [];
+  const responseEvidence = responses.map(scoreResponseEvidence);
+  const count = responseEvidence.length;
+  const average = (key) => count ? responseEvidence.reduce((total, item) => total + item[key], 0) / count : 0;
+  const relevance = average('relevance');
+  const depth = average('depth');
+  const reasoning = average('reasoning');
+  const technicalEvidence = average('technicalEvidence');
+  const structuredCommunication = average('structuredCommunication');
+  const technicalScore = clamp(Math.round(interviewType === 'behavioral' ? relevance * 0.7 + reasoning * 0.3 : technicalEvidence * 0.65 + relevance * 0.35));
+  const communicationScore = clamp(Math.round(relevance * 0.35 + depth * 0.35 + structuredCommunication * 0.3));
+  const problemSolvingScore = clamp(Math.round(relevance * 0.4 + reasoning * 0.35 + structuredCommunication * 0.15 + technicalEvidence * 0.1));
+  const confidenceScore = clamp(Math.round(relevance * 0.45 + depth * 0.25 + reasoning * 0.3));
+  const answerQualityScore = clamp(Math.round(relevance * 0.5 + depth * 0.25 + reasoning * 0.25));
+  const irrelevant = !count || relevance === 0;
+  const strongTechnicalEvidence = interviewType !== 'behavioral' && relevance >= 20 && technicalEvidence >= 70 && depth >= 60;
+  const scores = [technicalScore, communicationScore, problemSolvingScore, confidenceScore, answerQualityScore]
+    .map((score) => irrelevant ? Math.min(score, 20) : clamp(score + (strongTechnicalEvidence ? 15 : 0)));
+  const [strictTechnicalScore, strictCommunicationScore, strictProblemSolvingScore, strictConfidenceScore, strictAnswerQualityScore] = scores;
+  const overallScore = clamp(Math.round(scores.reduce((total, score) => total + score, 0) / scores.length));
+  const topics = responses.map((item) => item.question || 'the interview question').slice(0, 2).join('; ');
+  const hasEvidence = relevance >= 35 && (technicalEvidence >= 35 || reasoning >= 35);
   return validateEvaluation({
-    overallScore, technicalScore, communicationScore, problemSolvingScore, confidenceScore, answerQualityScore,
-    strengths: [averageWords >= 15 ? 'Answers provide useful detail and context.' : 'All interview questions were completed.', reasoningSignals >= 2 ? 'Responses show a structured reasoning process.' : 'Responses stay focused on the questions.'],
-    weaknesses: [averageWords < 15 ? 'Some answers are too brief to demonstrate depth.' : 'Some claims could use more measurable evidence.', technicalSignals < 2 && interviewType !== 'behavioral' ? 'Technical answers need more concrete implementation detail.' : 'Trade-offs could be explained more explicitly.'],
-    suggestions: ['Use the STAR structure or a similarly clear framework.', 'Include concrete examples, outcomes, and measurable impact.', ...(interviewType !== 'behavioral' ? ['Explain technical trade-offs, testing, and failure handling.'] : [])],
+    overallScore, technicalScore: strictTechnicalScore, communicationScore: strictCommunicationScore, problemSolvingScore: strictProblemSolvingScore, confidenceScore: strictConfidenceScore, answerQualityScore: strictAnswerQualityScore,
+    strengths: hasEvidence ? [`Relevant evidence was provided for: ${topics}.`] : [],
+    weaknesses: [!count ? 'No answer was submitted, so there is no evidence to assess.' : relevance < 20 ? `The response did not address the question: ${topics}.` : depth < 45 ? `The response to ${topics} is too brief to establish correctness or depth.` : `The response to ${topics} needs more explicit justification and trade-offs.`],
+    suggestions: [!count ? 'Submit a direct answer to each question before requesting feedback.' : relevance < 20 ? `Answer ${topics} directly and explain the relevant approach.` : `For ${topics}, explain the reasoning, implementation details, and trade-offs that support the answer.`],
   });
 }
+
+function scoreResponseEvidence({ question = '', answer = '' }) {
+  const questionTerms = meaningfulTerms(question);
+  const answerTerms = meaningfulTerms(answer);
+  const overlap = questionTerms.filter((term) => answerTerms.includes(term)).length;
+  const domainSignals = domainSignalCount(answer);
+  // Direct question terms are strongest evidence of relevance; domain evidence
+  // can support a technical answer but cannot make unrelated prose pass.
+  const relevance = questionTerms.length ? Math.min(100, Math.round((overlap / Math.min(questionTerms.length, 3)) * 100) + Math.min(40, domainSignals * 8)) : 0;
+  const answerWordCount = answerTerms.length;
+  const technicalEvidence = Math.min(100, domainSignals * 14);
+  const reasoning = Math.min(100, reasoningSignalCount(answer) * 20);
+  const structuredCommunication = Math.min(100, structureSignalCount(answer) * 25);
+  return { relevance, technicalEvidence, reasoning, structuredCommunication, depth: Math.min(100, answerWordCount * 2.5) };
+}
+
+function meaningfulTerms(value) {
+  const stopWords = new Set(['about', 'after', 'again', 'answer', 'being', 'could', 'does', 'each', 'from', 'have', 'into', 'that', 'this', 'would', 'with', 'your', 'what', 'when', 'where', 'which', 'will', 'how', 'why', 'the', 'and', 'for', 'are', 'you']);
+  return [...new Set(String(value).toLowerCase().split(/[^a-z0-9+#]+/).filter((term) => term.length >= 3))].filter((term) => !stopWords.has(term));
+}
+
+function domainSignalCount(answer) { return (String(answer).toLowerCase().match(/\b(api|database|algorithm|system|test|performance|security|architecture|code|data|cache|validation|authentication|authorization|schema|deployment|monitoring)\b/g) || []).length; }
+function reasoningSignalCount(answer) { return (String(answer).toLowerCase().match(/\b(because|therefore|trade-?off|first|then|result|approach|consider|validate|compare|measure)\b/g) || []).length; }
+function structureSignalCount(answer) { return (String(answer).toLowerCase().match(/\b(first|second|then|finally|because|for example|for instance|so that)\b/g) || []).length; }
 
 function clamp(value) { return Math.max(0, Math.min(100, value)); }
 

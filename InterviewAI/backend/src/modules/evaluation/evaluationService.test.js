@@ -51,3 +51,36 @@ test('evaluation transcript supports text and voice answers', () => {
   assert.equal(transcript[1].answer, 'A voice transcript');
 });
 
+test('empty and skipped responses produce an empty evidence set without failing evaluation', async () => {
+  const transcript = buildEvaluationTranscript({
+    questions: [{ question: 'Question?', category: 'technical', difficulty: 'medium' }],
+    answers: [{ questionIndex: 0, answer: '', transcript: '', status: 'skipped' }],
+  });
+  assert.deepEqual(transcript, []);
+
+  const previousKey = process.env.GEMINI_API_KEY;
+  const previousEnvironment = process.env.NODE_ENV;
+  delete process.env.GEMINI_API_KEY;
+  process.env.NODE_ENV = 'development';
+  try {
+    const evaluation = await evaluateTranscript({ ...context, transcript });
+    assert.ok(evaluation.overallScore >= 0 && evaluation.overallScore <= 100);
+  } finally {
+    if (previousKey) process.env.GEMINI_API_KEY = previousKey;
+    if (previousEnvironment === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousEnvironment;
+  }
+});
+
+test('local evaluation clearly separates correct, partial, and irrelevant answers', () => {
+  const question = 'How would you design a secure REST API?';
+  const correct = createLocalEvaluation({ ...context, transcript: [{ question, answer: 'First I would define API resources and a database schema, validate input, authenticate users, authorize actions, add rate limiting, and cover the system with integration tests because security failures must be measured.' }] });
+  const partial = createLocalEvaluation({ ...context, transcript: [{ question, answer: 'I would create an API and add authentication.' }] });
+  const irrelevant = createLocalEvaluation({ ...context, transcript: [{ question, answer: 'Purple clouds play guitar at breakfast.' }] });
+
+  assert.ok(correct.overallScore >= 80, `expected excellent score, received ${correct.overallScore}`);
+  assert.ok(partial.overallScore >= 20 && partial.overallScore < correct.overallScore, `expected partial score, received ${partial.overallScore}`);
+  assert.ok(irrelevant.overallScore <= 20, `expected irrelevant score, received ${irrelevant.overallScore}`);
+  assert.equal(irrelevant.strengths.length, 0);
+});
+

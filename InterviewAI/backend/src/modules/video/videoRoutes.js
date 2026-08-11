@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, unlink } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import multer from 'multer';
@@ -54,6 +54,11 @@ function receiveVideo(req, res, next) {
     if (!req.file) {
       console.warn('[video-upload-missing-file]', { requestId: req.id, userId: String(req.user?._id || '') });
       return res.status(400).json({ success: false, message: 'Video file is required' });
+    }
+    if (req.file.size <= 0) {
+      console.warn('[video-upload-empty-file]', { requestId: req.id, userId: String(req.user?._id || ''), mimeType: req.file.mimetype, filename: req.file.filename });
+      unlink(req.file.path, () => undefined);
+      return res.status(400).json({ success: false, code: 'EMPTY_VIDEO_FILE', message: 'The uploaded video contains no data. Record your response again before uploading.' });
     }
 
     console.info('[video-upload-received]', { requestId: req.id, feature: req.get('x-interviewai-feature') || 'unknown', userId: String(req.user._id), field: req.file?.fieldname, mimeType: req.file?.mimetype, bytes: req.file?.size });

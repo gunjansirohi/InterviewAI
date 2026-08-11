@@ -27,6 +27,7 @@ const proctorWarningSchema = new mongoose.Schema({
   type: { type: String, enum: ['multiple_faces', 'no_face', 'looking_away', 'tab_switch', 'fullscreen_exit', 'silence', 'no_response'], required: true },
   message: { type: String, required: true, maxlength: 200 },
   questionIndex: { type: Number, min: 0, default: 0 },
+  severity: { type: String, enum: ['low', 'medium', 'high'], default: 'medium' },
   createdAt: { type: Date, default: Date.now },
 }, { _id: false });
 

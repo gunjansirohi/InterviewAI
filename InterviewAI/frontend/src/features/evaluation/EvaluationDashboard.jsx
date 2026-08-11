@@ -18,7 +18,7 @@ export default function EvaluationDashboard() {
       if (Array.isArray(result)) setHistory(result);
       else setReport(result);
     }).catch((requestError) => {
-      if (active) setError(requestError.response?.data?.message || 'Unable to load interview feedback.');
+      if (active) setError(`AI evaluation failed: ${requestError.response?.data?.message || 'Unable to generate interview feedback.'}`);
     });
     return () => { active = false; };
   }, [interviewId, reportId]);

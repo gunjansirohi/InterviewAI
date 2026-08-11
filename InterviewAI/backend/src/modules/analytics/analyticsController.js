@@ -12,7 +12,10 @@ export async function dashboard(req, res, next) {
   try {
     const userId = getUserId(req);
     if (!userId) return sendError(res, 401, 'Authentication user data is missing');
-    return res.status(200).json({ success: true, analytics: await getDashboardAnalytics(userId) });
+    console.info('[analytics-dashboard-request]', { requestId: req.id, userId: String(userId) });
+    const analytics = await getDashboardAnalytics(userId);
+    console.info('[analytics-dashboard-response]', { requestId: req.id, userId: String(userId), statistics: { totalInterviews: analytics.totalInterviews, completedSessions: analytics.completedSessions, averageScore: analytics.averageScore } });
+    return res.status(200).json({ success: true, analytics });
   } catch (error) {
     console.error(`[analytics-dashboard] ${req.id}`, error?.stack || error);
     return next(error);

@@ -13,6 +13,13 @@ export async function transcribeAudio(file) {
 
   const client = new GeminiClient({ apiKey: process.env.GEMINI_API_KEY, timeout: 45000, maxRetries: 1 });
   try {
+    console.info('[voice-transcription-provider-request]', {
+      provider: 'gemini',
+      configuredModel: String(process.env.GEMINI_MODEL || '').trim() || 'auto-discovery',
+      filename: file.filename,
+      mimeType: file.mimetype,
+      bytes: file.size,
+    });
     const transcription = await client.audio.transcriptions.create({
       file: createReadStream(file.path),
       model: process.env.GEMINI_MODEL,

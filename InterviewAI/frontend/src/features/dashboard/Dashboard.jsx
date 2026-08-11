@@ -1,39 +1,51 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Loader from '../../components/Loader';
 import { useAuth } from '../auth/AuthContext';
-import { getUserProfile } from './dashboardService';
+import { getDashboardStatistics, getUserProfile } from './dashboardService';
 import ProfileCard from './ProfileCard';
 import StatsCard from './StatsCard';
 import ResumeAnalysis from '../resume/ResumeAnalysis';
 
-const statisticCards = [
-  { label: 'Total interviews', helperText: 'Available after your first interview' },
-  { label: 'Completed sessions', helperText: 'No sessions recorded yet' },
-  { label: 'Average score', helperText: 'Scores will appear here' },
-];
-
 export default function Dashboard() {
   const { updateUser } = useAuth();
   const [profile, setProfile] = useState(null);
+  const [statistics, setStatistics] = useState(null);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    let active = true;
-    getUserProfile()
-      .then((user) => {
-        if (active) {
-          setProfile(user);
-          updateUser(user);
-        }
-      })
-      .catch((requestError) => {
-        if (active) setError(requestError.response?.data?.message || 'Unable to load your dashboard.');
-      });
-    return () => { active = false; };
+  const loadDashboard = useCallback(async () => {
+    try {
+      setError('');
+      const [user, analytics] = await Promise.all([getUserProfile(), getDashboardStatistics()]);
+      setProfile(user);
+      setStatistics(analytics);
+      updateUser(user);
+    } catch (requestError) {
+      setError(requestError.response?.data?.message || 'Unable to load your dashboard.');
+    }
   }, [updateUser]);
 
+  useEffect(() => {
+    void loadDashboard();
+    const refreshStatistics = () => void loadDashboard();
+    window.addEventListener('focus', refreshStatistics);
+    window.addEventListener('interview-evaluation-complete', refreshStatistics);
+    return () => {
+      window.removeEventListener('focus', refreshStatistics);
+      window.removeEventListener('interview-evaluation-complete', refreshStatistics);
+    };
+  }, [loadDashboard]);
+
   if (error) return <div className="mx-auto w-full max-w-6xl flex-1 px-6 py-16"><div role="alert" className="rounded-xl bg-red-50 p-4 text-red-700">{error}</div></div>;
-  if (!profile) return <Loader />;
+  if (!profile || !statistics) return <Loader />;
+
+  const totalInterviews = statistics.totalInterviews ?? 0;
+  const completedSessions = statistics.completedSessions ?? 0;
+  const averageScore = statistics.averageScore ?? 0;
+  const statisticCards = [
+    { label: 'Total interviews', value: totalInterviews, helperText: totalInterviews ? 'Interview sessions created' : 'No interviews created yet' },
+    { label: 'Completed sessions', value: completedSessions, helperText: completedSessions ? 'Completed interview sessions' : 'No sessions recorded yet' },
+    { label: 'Average score', value: `${averageScore}/100`, helperText: completedSessions ? 'Average from saved evaluations' : 'Scores will appear here' },
+  ];
 
   return (
     <section className="mx-auto w-full max-w-6xl flex-1 px-6 py-12">

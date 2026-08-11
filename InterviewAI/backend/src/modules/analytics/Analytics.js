@@ -10,8 +10,11 @@ const roadmapItemSchema = new mongoose.Schema({
 const analyticsSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
   totalInterviews: { type: Number, default: 0, min: 0 },
+  completedSessions: { type: Number, default: 0, min: 0 },
   averageScore: { type: Number, default: 0, min: 0, max: 100 },
   bestScore: { type: Number, default: 0, min: 0, max: 100 },
+  successRate: { type: Number, default: 0, min: 0, max: 100 },
+  completionRate: { type: Number, default: 0, min: 0, max: 100 },
   skillScores: {
     technical: { type: Number, default: 0, min: 0, max: 100 },
     communication: { type: Number, default: 0, min: 0, max: 100 },

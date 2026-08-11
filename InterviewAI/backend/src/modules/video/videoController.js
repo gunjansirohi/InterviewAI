@@ -18,36 +18,28 @@ export async function saveVideoAnswer(req, res, next) {
 
 export async function saveProctorWarning(req, res, next) {
   try {
-    const payload = req.body || {};
-    const interviewId = payload.interviewId || payload.interview_id || payload.id;
-    const warningType = payload.warningType || payload.warning_type || payload.type || payload.warningTypeName;
+    const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const interviewId = typeof (payload.interviewId || payload.interview_id || payload.id) === 'string' ? (payload.interviewId || payload.interview_id || payload.id).trim() : payload.interviewId || payload.interview_id || payload.id;
+    const warningType = typeof (payload.warningType || payload.warning_type || payload.type || payload.warningTypeName) === 'string' ? (payload.warningType || payload.warning_type || payload.type || payload.warningTypeName).trim() : '';
     const message = typeof payload.message === 'string' ? payload.message.trim() : '';
     const questionIndex = Number(payload.questionIndex ?? payload.question_index ?? 0);
-    const severity = payload.severity || 'medium';
-    const timestamp = payload.timestamp || new Date().toISOString();
+    const severity = typeof payload.severity === 'string' ? payload.severity.trim().toLowerCase() : 'medium';
+    const timestamp = payload.timestamp ? new Date(payload.timestamp) : new Date();
+    const validationErrors = [];
 
-    if (!interviewId) {
-      return res.status(400).json({ success: false, message: 'Interview ID is required' });
-    }
+    console.info('[proctor-warning-request]', { requestId: req.id, userId: String(req.user?._id || ''), body: payload, interviewId, warningType, questionIndex, severity, timestamp: Number.isNaN(timestamp.getTime()) ? 'invalid' : timestamp.toISOString() });
 
-    if (!mongoose.isValidObjectId(interviewId)) {
-      return res.status(400).json({ success: false, message: 'Invalid interview ID format' });
-    }
+    if (!req.user?._id) return res.status(401).json({ success: false, message: 'Authentication is required to record a warning', requestId: req.id });
 
-    if (!warningType) {
-      return res.status(400).json({ success: false, message: 'Warning type is required' });
-    }
-
-    if (!warningTypes.has(warningType)) {
-      return res.status(400).json({ success: false, message: 'Unsupported warning type' });
-    }
-
-    if (!message) {
-      return res.status(400).json({ success: false, message: 'Warning message is required' });
-    }
-
-    if (!Number.isInteger(questionIndex) || questionIndex < 0) {
-      return res.status(400).json({ success: false, message: 'Question index must be a non-negative integer' });
+    if (!mongoose.isValidObjectId(interviewId)) validationErrors.push({ field: 'interviewId', message: 'A valid interview ID is required' });
+    if (!warningTypes.has(warningType)) validationErrors.push({ field: 'warningType', message: 'Use a supported warning type' });
+    if (!message || message.length > 200) validationErrors.push({ field: 'message', message: 'Warning message must contain 1 to 200 characters' });
+    if (!Number.isInteger(questionIndex) || questionIndex < 0) validationErrors.push({ field: 'questionIndex', message: 'Question index must be a non-negative integer' });
+    if (!['low', 'medium', 'high'].includes(severity)) validationErrors.push({ field: 'severity', message: 'Severity must be low, medium, or high' });
+    if (Number.isNaN(timestamp.getTime())) validationErrors.push({ field: 'timestamp', message: 'Timestamp must be a valid date' });
+    if (validationErrors.length) {
+      console.warn('[proctor-warning-invalid]', { requestId: req.id, userId: String(req.user._id), interviewId, errors: validationErrors });
+      return res.status(400).json({ success: false, message: 'Invalid proctor warning payload', errors: validationErrors, requestId: req.id });
     }
 
     const interview = await addProctorWarning({
@@ -58,7 +50,7 @@ export async function saveProctorWarning(req, res, next) {
         message,
         questionIndex,
         severity,
-        timestamp,
+        createdAt: timestamp,
       },
     });
 
@@ -74,7 +66,7 @@ export async function saveProctorWarning(req, res, next) {
 
     return res.status(200).json({ success: true, warningCount: interview.warningCount, autoTerminated: false, interview, message: 'Warning recorded' });
   } catch (error) {
-    console.error('[proctor-warning-failed]', { requestId: req.id, userId: String(req.user?._id || ''), error: error?.stack || error });
-    return res.status(500).json({ success: false, message: 'Unable to record warning' });
+    console.error('[proctor-warning-failed]', { requestId: req.id, userId: String(req.user?._id || ''), interviewId: req.body?.interviewId, name: error?.name, message: error?.message, stack: error?.stack });
+    return next(error);
   }
 }

@@ -52,11 +52,15 @@ export async function addProctorWarning({ userId, interviewId, warning }) {
   const interview = await Interview.findOne({ _id: interviewId, userId });
   if (!interview) return null;
 
-  const warningPayload = { ...warning, createdAt: new Date() };
-  interview.proctorWarnings.push(warningPayload);
+  interview.proctorWarnings.push(warning);
   interview.warningCount = interview.proctorWarnings.length;
   interview.warnings.push(buildWarningEvent({ reason: warning.type, message: warning.message }));
-  await interview.save();
+  try {
+    await interview.save();
+  } catch (error) {
+    console.error('[proctor-warning-database-failed]', { interviewId: String(interviewId), userId: String(userId), name: error.name, message: error.message, errors: error.errors ? Object.keys(error.errors) : [] });
+    throw error;
+  }
   return interview;
 }
 

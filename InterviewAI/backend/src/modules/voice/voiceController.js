@@ -21,13 +21,20 @@ export async function resolveTranscript(file, browserTranscript) {
 export async function transcribe(req, res, next) {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: 'An audio recording is required' });
-    console.info('[voice-transcription-request]', { requestId: req.id, feature: req.get('x-interviewai-feature') || 'unknown', userId: String(req.user._id), mimeType: req.file.mimetype, bytes: req.file.size });
+    if (req.file.size <= 0) {
+      const error = new Error('Microphone audio not detected. Record your response again.');
+      error.status = 400;
+      error.code = 'EMPTY_AUDIO_FILE';
+      error.expose = true;
+      throw error;
+    }
+    console.info('[voice-transcription-request]', { requestId: req.id, feature: req.get('x-interviewai-feature') || 'unknown', userId: String(req.user._id), filename: req.file.filename, originalName: req.file.originalname, mimeType: req.file.mimetype, bytes: req.file.size });
     const { transcript, source } = await resolveTranscript(req.file, req.body?.browserTranscript);
     const audioUrl = path.posix.join('uploads', 'audio', req.user._id.toString(), req.file.filename);
     console.info('[voice-transcription-complete]', { requestId: req.id, userId: String(req.user._id), source, characters: transcript.length });
     return res.status(200).json({ success: true, transcript, audioUrl, transcriptionSource: source });
   } catch (error) {
-    console.error('[voice-transcription-failed]', { requestId: req.id, userId: String(req.user._id), code: error.code, message: error.message });
+    console.error('[voice-transcription-failed]', { requestId: req.id, userId: String(req.user._id), filename: req.file?.filename, mimeType: req.file?.mimetype, bytes: req.file?.size, code: error.code, message: error.message });
     if (req.file?.path) await unlink(req.file.path).catch(() => undefined);
     return next(error);
   }

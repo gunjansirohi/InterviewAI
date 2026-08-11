@@ -1,11 +1,12 @@
 import api from '../../services/api';
 
 export async function uploadVideo(blob) {
-  if (!(blob instanceof Blob) || blob.size === 0) throw new Error('The video recording is empty. Please record again.');
+  if (!(blob instanceof Blob) || blob.size === 0) throw new Error('No video data was captured. Record your response again before uploading.');
   if (blob.size > 50 * 1024 * 1024) throw new Error('The video recording exceeds the 50 MB upload limit. Record a shorter response.');
 
   const formData = new FormData();
-  const extension = blob.type.includes('mp4') ? 'mp4' : blob.type.includes('webm') ? 'webm' : 'bin';
+  const extension = blob.type.includes('mp4') ? 'mp4' : 'webm';
+  console.info('[video-upload-request]', { bytes: blob.size, mimeType: blob.type || `video/${extension}`, extension });
   formData.append('video', blob, `answer-${Date.now()}.${extension}`);
 
   try {

@@ -3,7 +3,7 @@ import { useLocation, useParams } from 'react-router-dom';
 import Loader from '../../components/Loader';
 import InterviewResult from './InterviewResult';
 import QuestionCard from './QuestionCard';
-import { getInterview, saveInterviewAnswer } from './interviewService';
+import { getInterview, saveInterviewAnswer, skipInterviewQuestion } from './interviewService';
 
 export default function InterviewRoom() {
   const { id } = useParams();
@@ -42,6 +42,20 @@ export default function InterviewRoom() {
     }
   };
 
+  const skipAndContinue = async () => {
+    setSaving(true); setError('');
+    try {
+      const response = await skipInterviewQuestion({ interviewId: id, questionIndex: currentIndex, reason: 'candidate_skipped' });
+      setInterview(response.interview);
+      setAnswer('');
+      setCurrentIndex(response.nextQuestionIndex === -1 ? response.interview.questions.length : response.nextQuestionIndex);
+    } catch (requestError) {
+      setError(requestError.response?.data?.message || requestError.message || 'Unable to skip the question.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) return <Loader />;
   if (error && !interview) return <PageMessage message={error} />;
   if (!interview) return <PageMessage message="Interview not found." />;
@@ -52,7 +66,7 @@ export default function InterviewRoom() {
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3"><div><p className="font-semibold text-brand-600">{interview.interviewType} interview</p><h1 className="mt-1 text-3xl font-bold text-slate-900">{interview.role}</h1></div><span className="capitalize text-sm text-slate-500">{interview.difficulty} difficulty</span></div>
       {!complete && <div className="mb-6 h-2 overflow-hidden rounded-full bg-slate-200" aria-label={`${currentIndex} of ${interview.questions.length} questions complete`}><div className="h-full bg-brand-600 transition-all" style={{ width: `${(currentIndex / interview.questions.length) * 100}%` }} /></div>}
       {error && <div role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
-      {complete ? <InterviewResult interview={interview} /> : <QuestionCard question={interview.questions[currentIndex]} answer={answer} onAnswerChange={setAnswer} onNext={saveAndContinue} saving={saving} isLast={currentIndex === interview.questions.length - 1} position={currentIndex + 1} total={interview.questions.length} />}
+      {complete ? <InterviewResult interview={interview} /> : <QuestionCard question={interview.questions[currentIndex]} answer={answer} onAnswerChange={setAnswer} onNext={saveAndContinue} onSkip={skipAndContinue} saving={saving} isLast={currentIndex === interview.questions.length - 1} position={currentIndex + 1} total={interview.questions.length} />}
     </section>
   );
 }

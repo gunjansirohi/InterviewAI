@@ -11,9 +11,10 @@ export async function getDashboardAnalytics(userId) {
     InterviewReport.find({ userId }).sort({ createdAt: 1 }).lean(),
   ]);
   const statistics = calculateStatistics(interviews, reports);
+  console.info('[analytics-dashboard-statistics]', { userId: String(userId), interviewCount: interviews.length, reportCount: reports.length, statistics: { totalInterviews: statistics.totalInterviews, completedSessions: statistics.completedSessions, averageScore: statistics.averageScore } });
   await Analytics.findOneAndUpdate(
     { userId },
-    { $set: { totalInterviews: statistics.totalInterviews, averageScore: statistics.averageScore, bestScore: statistics.bestScore, skillScores: statistics.skillScores, weakAreas: statistics.weakAreas, strongAreas: statistics.strongAreas, updatedAt: new Date() }, $setOnInsert: { userId } },
+    { $set: { totalInterviews: statistics.totalInterviews, completedSessions: statistics.completedSessions, averageScore: statistics.averageScore, bestScore: statistics.bestScore, successRate: statistics.successRate, completionRate: statistics.completionRate, skillScores: statistics.skillScores, weakAreas: statistics.weakAreas, strongAreas: statistics.strongAreas, updatedAt: new Date() }, $setOnInsert: { userId } },
     { upsert: true, runValidators: true },
   );
   return { ...statistics, latestInterview: interviews.at(-1) || null, recentInterviews: interviews.slice(-5).reverse() };

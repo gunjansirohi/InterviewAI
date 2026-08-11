@@ -4,6 +4,7 @@ import Loader from "../../components/Loader";
 import InterviewResult from "../interview/InterviewResult";
 import { getInterview } from "../interview/interviewService";
 import TextToSpeech from "../voiceInterview/TextToSpeech";
+import { transcribeRecording } from '../voiceInterview/voiceService';
 import AIInterviewerAvatar from "../interview/AIInterviewerAvatar";
 import {
   endVideoInterview,
@@ -21,6 +22,10 @@ export default function VideoInterviewRoom() {
   const streamRef = useRef(null);
   const recorderRef = useRef(null);
   const chunksRef = useRef([]);
+  const audioRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const audioStoppedRef = useRef(null);
+  const audioStopPromiseRef = useRef(null);
   const recognitionRef = useRef(null);
   const lastWarningRef = useRef({});
   const noFaceSinceRef = useRef(null);
@@ -83,16 +88,17 @@ export default function VideoInterviewRoom() {
       if (now - (lastWarningRef.current[type] || 0) < 10000) return;
       lastWarningRef.current[type] = now;
       setWarnings((items) => [...items, { type, message, time: now }]);
-      console.info('[proctor-warning-payload]', { interviewId: id, warningType: type, message, questionIndex: Math.max(currentIndex, 0), timestamp: new Date().toISOString() });
-      reportProctorWarning({
+      const payload = {
         interviewId: id,
         warningType: type,
-        warning_type: type,
         message,
         questionIndex: Math.max(currentIndex, 0),
-        question_index: Math.max(currentIndex, 0),
+        severity: 'medium',
         timestamp: new Date().toISOString(),
-      }).catch((requestError) => {
+      };
+      console.info('[proctor-warning-payload]', { ...payload, messageLength: message?.length || 0 });
+      reportProctorWarning(payload).catch((requestError) => {
+        console.error('[proctor-warning-submit-failed]', { interviewId: id, warningType: type, status: requestError?.response?.status, message: requestError?.response?.data?.message || requestError?.message, requestId: requestError?.response?.data?.requestId });
         setError(requestError?.response?.data?.message || 'Unable to record the warning.');
       });
     },
@@ -195,6 +201,10 @@ export default function VideoInterviewRoom() {
       streamRef.current = stream;
       videoRef.current.srcObject = stream;
       await videoRef.current.play();
+      console.info('[video-media-permission-granted]', {
+        audioTracks: stream.getAudioTracks().map((track) => ({ enabled: track.enabled, state: track.readyState })),
+        videoTracks: stream.getVideoTracks().map((track) => ({ enabled: track.enabled, state: track.readyState })),
+      });
       setCameraReady(true);
     } catch (cause) {
       setError(
@@ -248,13 +258,38 @@ export default function VideoInterviewRoom() {
   }, [id, stopStreams]);
 
   const startRecording = () => {
-    const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
-      ? "video/webm;codecs=vp9,opus"
-      : "video/webm";
-    const recorder = new MediaRecorder(streamRef.current, { mimeType });
+    const stream = streamRef.current;
+    if (!stream || !stream.active || !stream.getVideoTracks().some((track) => track.readyState === 'live')) {
+      setError('Your camera stream is not ready. Start the camera and try recording again.');
+      return;
+    }
+    if (!stream.getAudioTracks().some((track) => track.readyState === 'live' && track.enabled)) {
+      setError('Microphone audio not detected. Allow microphone access and try recording again.');
+      return;
+    }
+    if (typeof MediaRecorder === 'undefined') {
+      setError('Video recording is not supported by this browser.');
+      return;
+    }
+    const mimeType = getSupportedRecordingMimeType();
+    let recorder;
+    try {
+      recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+    } catch (cause) {
+      console.error('[video-recording-init-failed]', { message: cause?.message, mimeType, streamActive: stream.active });
+      setError('Unable to initialize video recording. Please try a supported browser.');
+      return;
+    }
     chunksRef.current = [];
+    audioChunksRef.current = [];
+    setError('');
+    setVideoUrl('');
+    setTranscript('');
     recorder.ondataavailable = ({ data }) => {
-      if (data.size) chunksRef.current.push(data);
+      if (data?.size > 0) {
+        chunksRef.current.push(data);
+        console.debug('[video-recording-chunk]', { bytes: data.size, chunkCount: chunksRef.current.length });
+      }
     };
     recorder.onstop = async () => {
       setRecording(false);
@@ -262,19 +297,67 @@ export default function VideoInterviewRoom() {
       recognitionRef.current?.stop();
       recognitionRef.current = null;
       try {
-        setVideoUrl(
-          await uploadVideo(new Blob(chunksRef.current, { type: mimeType })),
-        );
+        const finalMimeType = recorder.mimeType || mimeType || 'video/webm';
+        const videoBlob = new Blob(chunksRef.current, { type: finalMimeType });
+        console.info('[video-recording-finalized]', { bytes: videoBlob.size, chunkCount: chunksRef.current.length, mimeType: finalMimeType });
+        if (videoBlob.size === 0) {
+          setError('No video data was captured. Confirm camera access, record for a few seconds, and try again.');
+          return;
+        }
+        await Promise.race([
+          audioStopPromiseRef.current || Promise.resolve(),
+          new Promise((resolve) => window.setTimeout(resolve, 2000)),
+        ]);
+        const audioRecorder = audioRecorderRef.current;
+        const audioMimeType = audioRecorder?.mimeType || getSupportedAudioMimeType() || 'audio/webm';
+        const audioBlob = new Blob(audioChunksRef.current, { type: audioMimeType });
+        console.info('[video-audio-recording-finalized]', { bytes: audioBlob.size, chunkCount: audioChunksRef.current.length, mimeType: audioMimeType });
+        if (audioBlob.size === 0) {
+          setError('Microphone audio not detected. Record your response again after allowing microphone access.');
+          return;
+        }
+        const [uploadedVideoUrl, transcription] = await Promise.all([uploadVideo(videoBlob), transcribeRecording(audioBlob)]);
+        if (!transcription.transcript?.trim()) {
+          setError('Transcription failed. No speech was recognized in the recording.');
+          return;
+        }
+        setVideoUrl(uploadedVideoUrl);
+        setTranscript(transcription.transcript.trim());
       } catch (requestError) {
         setError(
-          requestError.response?.data?.message ||
-            requestError.message ||
-            "Unable to upload the video response.",
+          requestError.response?.data?.code === 'TRANSCRIPTION_TIMEOUT'
+            ? 'Transcription failed because the service timed out. Please record again.'
+            : `Transcription failed: ${requestError.response?.data?.message || requestError.message || 'Unable to process the recorded audio.'}`,
         );
       } finally {
         setBusy(false);
       }
     };
+    recorder.onerror = (event) => {
+      console.error('[video-recording-failed]', { message: event.error?.message, name: event.error?.name });
+      setError('Video recording failed. Please record your response again.');
+    };
+    let audioRecorder;
+    try {
+      const audioStream = new MediaStream(stream.getAudioTracks());
+      const audioMimeType = getSupportedAudioMimeType();
+      audioRecorder = new MediaRecorder(audioStream, audioMimeType ? { mimeType: audioMimeType } : undefined);
+      audioRecorder.ondataavailable = ({ data }) => {
+        if (data?.size > 0) {
+          audioChunksRef.current.push(data);
+          responseActivityRef.current = Date.now();
+        }
+      };
+      audioRecorder.onstop = () => audioStoppedRef.current?.();
+      audioRecorder.onerror = (event) => console.error('[video-audio-recording-failed]', { message: event.error?.message, name: event.error?.name });
+      audioRecorder.start(1000);
+      audioRecorderRef.current = audioRecorder;
+      responseActivityRef.current = Date.now();
+    } catch (cause) {
+      console.error('[video-audio-recording-init-failed]', { message: cause?.message });
+      setError('Microphone audio not detected. Check microphone permission and try again.');
+      return;
+    }
     const BrowserRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
     if (BrowserRecognition) {
@@ -295,16 +378,42 @@ export default function VideoInterviewRoom() {
       recognition.start();
       recognitionRef.current = recognition;
     }
-    recorder.start(250);
+    try {
+      recorder.start(1000);
+    } catch (cause) {
+      console.error('[video-recording-start-failed]', { message: cause?.message, mimeType: recorder.mimeType });
+      if (audioRecorder.state !== 'inactive') audioRecorder.stop();
+      setError('Unable to start video recording. Please try again.');
+      return;
+    }
     recorderRef.current = recorder;
-    setVideoUrl("");
+    console.info('[video-recording-started]', { videoMimeType: recorder.mimeType, audioMimeType: audioRecorder.mimeType, audioTrackCount: stream.getAudioTracks().length });
     setRecording(true);
+  };
+  const stopRecording = () => {
+    const recorder = recorderRef.current;
+    if (!recorder || recorder.state === 'inactive') return;
+    try {
+      // Flush the final segment before stop so short recordings do not rely on
+      // the browser's periodic data event timing.
+      recorder.requestData?.();
+      const audioRecorder = audioRecorderRef.current;
+      if (audioRecorder?.state === 'recording') {
+        audioStopPromiseRef.current = new Promise((resolve) => { audioStoppedRef.current = resolve; });
+        audioRecorder.requestData?.();
+        audioRecorder.stop();
+      }
+      recorder.stop();
+      console.info('[video-recording-stopped]', { videoState: recorder.state, audioState: audioRecorder?.state });
+    } catch (cause) {
+      console.error('[video-recording-stop-failed]', { message: cause?.message, state: recorder.state });
+      setError('Unable to finalize the video recording. Please record again.');
+      setRecording(false);
+    }
   };
   const submit = async () => {
     if (!transcript.trim() || !videoUrl) {
-      setError(
-        "Record a video response and provide a transcript before submitting.",
-      );
+      setError('Transcription failed. Record a video response with audible speech before submitting.');
       return;
     }
     setBusy(true);
@@ -316,6 +425,7 @@ export default function VideoInterviewRoom() {
         transcript,
         videoUrl,
       });
+      console.info('[video-answer-submit]', { interviewId: id, questionIndex: currentIndex, transcriptCharacters: transcript.trim().length, hasVideo: Boolean(videoUrl) });
       setInterview(
         await requestFollowUp({
           interviewId: id,
@@ -327,7 +437,7 @@ export default function VideoInterviewRoom() {
     } catch (requestError) {
       setError(
         requestError.response?.data?.message ||
-          "Unable to save the video answer.",
+          "AI evaluation failed. Unable to save the video answer.",
       );
     } finally {
       setBusy(false);
@@ -349,7 +459,7 @@ export default function VideoInterviewRoom() {
       setBusy(true);
       setError("");
       try {
-        if (recording) recorderRef.current?.stop();
+        if (recording) stopRecording();
         await finalizeSession("Interview ended successfully.", false);
       } catch (requestError) {
         setError(requestError.response?.data?.message || "Unable to end the interview.");
@@ -368,7 +478,7 @@ export default function VideoInterviewRoom() {
     setError('');
     try {
       const question = interview.questions[currentIndex];
-      const response = await skipVideoQuestion({ interviewId: id, questionId: question?._id || question?.question, reason: 'candidate_skipped' });
+      const response = await skipVideoQuestion({ interviewId: id, questionIndex: currentIndex, questionId: question?._id || question?.question, reason: 'candidate_skipped' });
       setInterview(response.interview);
       const answeredKeys = new Set((response.interview?.answers || []).map((item) => Number(item.questionIndex)));
       const hasRemainingQuestions = response.interview?.questions?.some((_, index) => !answeredKeys.has(index));
@@ -502,7 +612,7 @@ export default function VideoInterviewRoom() {
             {recording && (
               <button
                 type="button"
-                onClick={() => recorderRef.current?.stop()}
+                onClick={stopRecording}
                 className="rounded-lg bg-white px-5 py-3 font-semibold text-red-700"
               >
                 Stop recording
@@ -562,6 +672,16 @@ export default function VideoInterviewRoom() {
       )}
     </main>
   );
+}
+
+function getSupportedRecordingMimeType() {
+  const candidates = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+  return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate)) || '';
+}
+
+function getSupportedAudioMimeType() {
+  const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
+  return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate)) || '';
 }
 
 function PageError({ message }) {

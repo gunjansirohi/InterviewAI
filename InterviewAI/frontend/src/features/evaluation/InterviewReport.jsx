@@ -1,11 +1,22 @@
+import { useState } from "react";
 import PerformanceSummary from "./PerformanceSummary";
 import ScoreCard from "./ScoreCard";
 import SkillRadarChart from "./SkillRadarChart";
 import StrengthCard from "./StrengthCard";
 import SuggestionsCard from "./SuggestionsCard";
 import WeaknessCard from "./WeaknessCard";
+import { downloadEvaluationReport } from './evaluationService';
 
 export default function InterviewReport({ report }) {
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState('');
+  const download = async () => {
+    setDownloading(true);
+    setDownloadError('');
+    try { await downloadEvaluationReport(report._id || report.interviewId?._id || report.interviewId); }
+    catch (error) { setDownloadError(await getDownloadErrorMessage(error)); }
+    finally { setDownloading(false); }
+  };
   return (
     <div className="space-y-6">
       <PerformanceSummary report={report} />
@@ -67,13 +78,23 @@ export default function InterviewReport({ report }) {
       <div className="flex justify-end">
         <button
           type="button"
-          disabled
-          title="PDF export will be available in a future phase"
-          className="cursor-not-allowed rounded-lg border border-slate-300 px-5 py-3 font-semibold text-slate-400"
+          onClick={download}
+          disabled={downloading}
+          className="rounded-lg border border-slate-300 px-5 py-3 font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-wait disabled:opacity-50"
         >
-          Download report (coming soon)
+          {downloading ? 'Generating PDF...' : 'Download report'}
         </button>
       </div>
+      {downloadError && <p role="alert" className="text-right text-sm text-red-700">{downloadError}</p>}
     </div>
   );
+}
+
+async function getDownloadErrorMessage(error) {
+  const data = error.response?.data;
+  if (data instanceof Blob) {
+    try { return JSON.parse(await data.text()).message || 'Unable to download the report. Please try again.'; }
+    catch { return 'Unable to download the report. Please try again.'; }
+  }
+  return data?.message || 'Unable to download the report. Please try again.';
 }
