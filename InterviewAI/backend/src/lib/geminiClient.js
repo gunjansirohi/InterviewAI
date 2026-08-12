@@ -1,10 +1,32 @@
 import { readFile } from 'node:fs/promises';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { toJSONSchema } from 'zod';
 
 const GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 let cachedModel;
 
-export function zodTextFormat(schema) { return schema; }
+function toGeminiResponseSchema(jsonSchema) {
+  if (!jsonSchema || typeof jsonSchema !== 'object') return undefined;
+
+  const schema = {};
+  for (const key of ['type', 'description', 'format', 'nullable', 'enum', 'minimum', 'maximum', 'minItems', 'maxItems']) {
+    if (jsonSchema[key] !== undefined) schema[key] = jsonSchema[key];
+  }
+  if (jsonSchema.properties) {
+    schema.properties = Object.fromEntries(Object.entries(jsonSchema.properties)
+      .map(([key, value]) => [key, toGeminiResponseSchema(value)]));
+  }
+  if (jsonSchema.items) schema.items = toGeminiResponseSchema(jsonSchema.items);
+  if (Array.isArray(jsonSchema.required)) schema.required = jsonSchema.required;
+  return schema;
+}
+
+export function zodTextFormat(schema) {
+  return {
+    parse: (value) => schema.parse(value),
+    responseSchema: toGeminiResponseSchema(toJSONSchema(schema)),
+  };
+}
 
 export function normalizeGeminiModelName(value = '') {
   return String(value).trim().replace(/^models\/+?/i, '');
@@ -188,7 +210,13 @@ export default class GeminiClient {
     validateGeminiConfiguration(modelName, { apiKey: this.apiKey });
     const prompt = input.map(({ role, content }) => `${role.toUpperCase()}:\n${content}`).join('\n\n');
     try {
-      const model = this.client.getGenerativeModel({ model: modelName, generationConfig: { responseMimeType: 'application/json' } });
+      const generationConfig = {
+        responseMimeType: 'application/json',
+        // Schema-constrained JSON prevents malformed partial JSON responses. The
+        // parser and Zod validation below remain the safety boundary.
+        ...(text?.format?.responseSchema ? { responseSchema: text.format.responseSchema } : {}),
+      };
+      const model = this.client.getGenerativeModel({ model: modelName, generationConfig });
       const result = await model.generateContent(`${prompt}\n\nReturn only one valid JSON value matching the requested structure. Do not include Markdown, code fences, explanations, or any text outside the JSON.`);
       const responseText = result.response.text();
       console.info('[gemini-api-response]', { operation: 'structured-generation', model: modelName, status: 200, responseCharacters: responseText.length });

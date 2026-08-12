@@ -16,7 +16,7 @@ async function startServer() {
 
   const databaseReady = await connectDatabase();
   if (!databaseReady) {
-    console.warn('Database connection could not be established at startup; route handlers will use graceful fallbacks.');
+    console.warn('Database-backed routes will return 503 until MongoDB reconnects. Only explicitly configured non-database fallbacks remain available.');
   }
 
   const server = app.listen(port, () => console.log(`InterviewAI API listening on port ${port}`));
@@ -35,4 +35,3 @@ startServer().catch((error) => {
   console.error('Failed to start the server:', error);
   process.exit(1);
 });
-

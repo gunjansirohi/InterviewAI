@@ -17,6 +17,7 @@
     "express": "latest",
     "jsonwebtoken": "latest",
     "mammoth": "latest",
+    "mongodb": "^7.5.0",
     "mongoose": "latest",
     "multer": "latest",
     "pdf-parse": "1.1.1",
