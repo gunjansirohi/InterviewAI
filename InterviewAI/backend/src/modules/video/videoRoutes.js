@@ -7,7 +7,7 @@ import { Router } from 'express';
 import protect from '../../middleware/authMiddleware.js';
 
 const maximumBytes = (Number(process.env.MAX_VIDEO_SIZE_MB) || 50) * 1024 * 1024;
-const directory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../uploads/video');
+const directory = path.join(os.tmpdir(), 'interview-ai', 'uploads', 'video');
 const allowedMimeTypes = new Set(['video/mp4', 'video/webm', 'video/quicktime', 'video/x-m4v', 'video/x-msvideo', 'video/ogg']);
 const allowedExtensions = new Set(['.mp4', '.webm', '.mov', '.m4v', '.avi', '.ogg']);
 mkdirSync(directory, { recursive: true });
