@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, unlink } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import os from 'node:os';
 import multer from 'multer';
 import { Router } from 'express';
 import protect from '../../middleware/authMiddleware.js';
