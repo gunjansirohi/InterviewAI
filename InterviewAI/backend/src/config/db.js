@@ -65,7 +65,12 @@ export default async function connectDatabase() {
     await mongoose.connect(uri, connectionOptions);
     return true;
   } catch (error) {
-    console.error('MongoDB connection failed:', getSafeMongoErrorMessage(error));
-    return false;
-  }
+  console.error('MongoDB connection failed:', {
+    name: error?.name,
+    code: error?.code,
+    message: error?.message,
+  });
+  return false;
+}
+
 }
