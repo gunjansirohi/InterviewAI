@@ -1,7 +1,9 @@
+
 import axios from 'axios';
 
 const apiBaseUrl = (
-  import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
+  import.meta.env.VITE_API_URL ||
+  'https://interview-ai-muye.vercel.app/api'
 ).replace(/\/+$/, '');
 
 const api = axios.create({
